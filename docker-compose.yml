@@ -1,0 +1,17 @@
+services:
+  pocket-rag:
+    build: .
+    image: pocket-rag
+    container_name: pocket-rag-api
+    ports:
+      - "3000:3000"
+    volumes:
+      - pocket-rag-data:/data
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/data/pocket-rag.sqlite
+      - OLLAMA_URL=http://host.docker.internal:11434
+
+volumes:
+  pocket-rag-data:
