@@ -1,0 +1,182 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { db } from "./db/schema";
+import { AI } from "./services/ai";
+
+const server = new McpServer({
+  name: "PocketRAG",
+  version: "1.0.0",
+});
+
+server.registerTool(
+  "search_knowledge_base",
+  {
+    description: "Search local PDF documentation for context.",
+    inputSchema: {
+      query: z.string().describe("The search keywords or question"),
+      mode: z
+        .enum(["vector", "fts", "hybrid"])
+        .default("hybrid")
+        .describe("Search mode"),
+    },
+  },
+  async ({ query, mode }) => {
+    try {
+      console.error(`[MCP] 🔍 Searching: "${query}" (Mode: ${mode})`);
+
+      const safeQuery = `"${query.replace(/"/g, '""')}"`;
+      let results: Array<{ content: string; filename: string; score: number }> =
+        [];
+
+      if (mode === "fts") {
+        const ftsRaw = db
+          .prepare(
+            `SELECT content, filename, rank FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT 10`
+          )
+          .all(safeQuery) as any[];
+
+        results = ftsRaw.map((r) => ({
+          content: r.content,
+          filename: r.filename,
+          score: 1 - Math.min(1, Math.abs(r.rank) / 10),
+        }));
+      } else {
+        const embedding = await AI.embed(query);
+        const queryBuffer = new Uint8Array(new Float32Array(embedding).buffer);
+
+        const vectorSQL = `
+SELECT
+docs.content,
+docs.filename,
+vec_distance_cosine(vec_docs.embedding, ?) as distance
+FROM vec_docs
+JOIN docs ON vec_docs.doc_id = docs.rowid
+WHERE vec_docs.embedding MATCH ? AND k = 20
+ORDER BY distance
+`;
+
+        const vectorRaw = db
+          .prepare(vectorSQL)
+          .all(queryBuffer, queryBuffer) as any[];
+
+        if (mode === "vector") {
+          results = vectorRaw.map((r) => ({
+            content: r.content,
+            filename: r.filename,
+            score: 1 - r.distance,
+          }));
+        } else {
+
+          const ftsRaw = db
+            .prepare(
+              `SELECT content, filename, rank FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT 20`
+            )
+            .all(safeQuery) as any[];
+
+          const k = 60;
+          const scores = new Map<string, { score: number; doc: any }>();
+
+          vectorRaw.forEach((row, rank) => {
+            const score = 1 / (k + rank + 1);
+            scores.set(row.content, { score, doc: row });
+          });
+
+          ftsRaw.forEach((row, rank) => {
+            const score = 1 / (k + rank + 1);
+            const existing = scores.get(row.content);
+            if (existing) {
+              existing.score += score;
+            } else {
+              scores.set(row.content, { score, doc: row });
+            }
+          });
+
+          results = Array.from(scores.values())
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map((item) => ({
+              content: item.doc.content,
+              filename: item.doc.filename,
+              score: item.score,
+            }));
+        }
+      }
+
+      if (results.length === 0) {
+        return {
+          content: [{ type: "text", text: "No relevant documents found." }],
+        };
+      }
+
+      const formatted = results
+        .map(
+          (r) =>
+            `[📄 File: ${r.filename}] (Relevance: ${(r.score * 100).toFixed(
+              0
+            )}%)\n${r.content.trim()}`
+        )
+        .join("\n\n---\n\n");
+
+      return { content: [{ type: "text", text: formatted }] };
+    } catch (err: any) {
+      console.error(`[MCP] ❌ Error: ${err.message}`);
+      return {
+        content: [{ type: "text", text: `Database Error: ${err.message}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.registerTool(
+  "get_knowledge_base_stats",
+  {
+    description: "Get statistics about the local knowledge base.",
+    inputSchema: {},
+  },
+  async () => {
+    const stats = db
+      .prepare(
+        `SELECT (SELECT COUNT(DISTINCT filename) FROM docs) as doc_count, (SELECT COUNT(*) FROM docs) as chunk_count`
+      )
+      .get() as any;
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `📚 Knowledge Base Stats\n- Documents: ${stats.doc_count}\n- Total Chunks: ${stats.chunk_count}`,
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "list_documents",
+  {
+    description: "List all files currently indexed.",
+    inputSchema: {},
+  },
+  async () => {
+    const docs = db
+      .prepare(`SELECT DISTINCT filename FROM docs ORDER BY filename`)
+      .all() as any[];
+    const list = docs.length
+      ? docs.map((d) => `- ${d.filename}`).join("\n")
+      : "No documents found.";
+    return { content: [{ type: "text", text: `📂 Indexed Files:\n${list}` }] };
+  }
+);
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("[MCP] 🚀 PocketRAG Native Server Running over Stdio");
+}
+
+main().catch((err) => {
+  console.error("[MCP] Fatal Error:", err);
+  process.exit(1);
+});
