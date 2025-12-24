@@ -2,81 +2,74 @@
 
 <div align="center">
 
-**100% Local RAG for Claude Desktop**
+**100% Local RAG Server**
 
 A self-hosted, privacy-first RAG server that runs entirely on your machine.
 
-Index your PDFs, code, and docs into a portable SQLite database — then give Claude instant access via MCP.
+Index your PDFs, code, and docs into a portable SQLite database — then query via **REST API** or **MCP**.
 
-[Quick Start](#-quick-start-5-minutes) • [Why Local RAG?](#-why-local-rag) • [Troubleshooting](#-troubleshooting)
+[Quick Start](#-quick-start-5-minutes) • [Why Local RAG?](#-why-local-rag) • [Usage Modes](#-usage-modes) • [Troubleshooting](#-troubleshooting)
 
 </div>
 
-> 🔒 **Privacy First:** Unlike Claude's built-in Memory feature, PocketRAG keeps everything local. Your documents, embeddings, and searches never leave your machine when using Ollama. You own the data, you control the infrastructure.
+> 🔒 **Privacy First:** Everything stays local. Your documents, embeddings, and searches never leave your machine when using Ollama. You own the data, you control the infrastructure.
+
+**Two Ways to Use:**
+1. 🌐 **REST API** — Use with any application, script, or AI assistant
+2. 🔌 **MCP Server** — Seamless integration with Claude Desktop
 
 ---
 
 ## ⚡ Why Local RAG?
 
-Claude Desktop has built-in features like file uploads and Memory, but PocketRAG gives you something different:
+Unlike cloud-based RAG services, PocketRAG gives you complete control:
 
 **🔒 100% Local & Private**
+
 - All data stays on your machine
-- No uploads to Anthropic servers (when using Ollama)
+- No uploads to external servers (when using Ollama)
 - Your documents never leave your infrastructure
 - Full control over embeddings and storage
 
 **📚 Document-Centric Knowledge Base**
+
 - Index entire PDF libraries, codebases, and documentation
 - Persistent across all conversations
 - Advanced hybrid search (semantic + keyword)
 - No token limits on indexed content
 
 **🔧 Self-Hosted & Customizable**
+
 - Run your own embedding models (Ollama/OpenAI)
 - Portable SQLite database you can backup/share
 - REST API for automation and scripting
 - Open source — modify and extend as needed
 
-### Comparison Table
-
-| Feature              | 📎 File Upload         | 🧠 Claude Memory       | ⚡ PocketRAG (Local RAG)      |
-| -------------------- | ---------------------- | ---------------------- | ----------------------------- |
-| **Privacy**          | Sent to Anthropic      | Sent to Anthropic      | **100% local (Ollama)**       |
-| **Persistence**      | Per-conversation       | Cross-conversation     | **Permanent + portable**      |
-| **Document Control** | Auto-managed           | Auto-managed           | **Full control (SQLite)**     |
-| **Search Type**      | Basic full-text        | Relevance-based recall | **Hybrid (Vector + FTS5)**    |
-| **Scale**            | ~10 files/conversation | Memory snapshots       | **Thousands of documents**    |
-| **Cross-document**   | No                     | Yes                    | **Yes — unified search**      |
-| **Offline**          | No                     | No                     | **Yes (with Ollama)**         |
-| **API Access**       | No                     | No                     | **Yes — REST API**            |
-| **Customizable**     | No                     | No                     | **Yes — open source**         |
-
 **When to use PocketRAG:**
+
 - You need **privacy** and want documents to stay local
 - You're indexing **large document collections** (100+ PDFs, codebases)
 - You want **full control** over your knowledge base
 - You need **offline access** to your RAG system
 - You want to **programmatically query** via REST API
 
-
 ### Visual Comparison
 
 ```
 
 ┌─────────────────────────────────────────────────────────────────┐
-│ PocketRAG (Local RAG) ✅                                        │
+│ PocketRAG (Local RAG) ✅ │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Your Computer ONLY                                            │
-│  ┌──────────────┐      MCP       ┌──────────────┐             │
-│  │ Claude Desktop│◀──────────────▶│ PocketRAG    │             │
-│  └──────────────┘   (stdio)      │  ├─ Ollama   │             │
-│                                   │  ├─ SQLite   │             │
-│                                   │  └─ Search   │             │
-│                                   └──────────────┘             │
-│  🔒 Everything stays local - You own the data                  │
-│                                                                 │
+│ │
+│ Your Computer ONLY │
+│ ┌──────────────┐ MCP ┌──────────────┐ │
+│ │ Claude Desktop│◀──────────────▶│ PocketRAG │ │
+│ └──────────────┘ (stdio) │ ├─ Ollama │ │
+│ │ ├─ SQLite │ │
+│ │ └─ Search │ │
+│ └──────────────┘ │
+│ 🔒 Everything stays local - You own the data │
+│ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,24 +83,24 @@ PocketRAG uses **Reciprocal Rank Fusion (RRF)** to combine semantic understandin
 
 ```mermaid
 graph TB
-    subgraph "📥 INGESTION MODE (API)"
-        PDF[📄 Your Local PDFs] --> API[PocketRAG API<br/>localhost:3000]
-        API --> Embed[Local Embeddings<br/>Ollama/OpenAI]
-        Embed --> DB1[(📦 SQLite Database<br/>Vector + FTS5<br/>Your Machine)]
-    end
+subgraph "📥 INGESTION MODE (API)"
+PDF[📄 Your Local PDFs] --> API[PocketRAG API<br/>localhost:3000]
+API --> Embed[Local Embeddings<br/>Ollama/OpenAI]
+Embed --> DB1[(📦 SQLite Database<br/>Vector + FTS5<br/>Your Machine)]
+end
 
-    subgraph "🔍 QUERY MODE (MCP)"
-        Claude[🧠 Claude Desktop] --> MCP[MCP Protocol<br/>stdio]
-        MCP --> Search[Local Hybrid Search<br/>Vector + Keyword]
-        Search --> DB2[(📦 SQLite Database<br/>Your Machine)]
-        DB2 --> Results[Search Results]
-        Results --> Claude
-    end
+subgraph "🔍 QUERY MODE (MCP)"
+Claude[🧠 Claude Desktop] --> MCP[MCP Protocol<br/>stdio]
+MCP --> Search[Local Hybrid Search<br/>Vector + Keyword]
+Search --> DB2[(📦 SQLite Database<br/>Your Machine)]
+DB2 --> Results[Search Results]
+Results --> Claude
+end
 
-    style DB1 fill:#90EE90
-    style DB2 fill:#90EE90
-    style Embed fill:#87CEEB
-    style Search fill:#87CEEB
+style DB1 fill:#90EE90
+style DB2 fill:#90EE90
+style Embed fill:#87CEEB
+style Search fill:#87CEEB
 ```
 
 **Privacy Guarantee:** With Ollama, everything stays local — embeddings, database, searches. Claude only receives the search results you explicitly query.
@@ -119,21 +112,62 @@ graph TB
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - [Ollama](https://ollama.ai/download) (**Recommended** for 100% local operation)
 
-**One-time Setup:** Pull the embedding model (tiny ~200MB, no GPU required):
+**One-time Setup:** Pull the embedding and chat models:
 
 ```bash
-ollama pull nomic-embed-text
+# High-quality embedding model (1024 dims)
+ollama pull mxbai-embed-large
+
+# Chat model (choose one)
+ollama pull llama3.2 # Default, lightweight (2GB)
+ollama pull qwen2.5-coder:7b # Best for code-heavy docs
+ollama pull llama3.2:3b # Balanced quality/speed
 ```
+
+> 💡 **Alternative:** Use the lighter `nomic-embed-text` model (~200MB) if you prefer faster downloads:
+>
+> ```bash
+> ollama pull nomic-embed-text
+> ```
+>
+> Set `OLLAMA_EMBED_MODEL=nomic-embed-text` in your environment.
 
 > 💡 **Optional:** You can use OpenAI embeddings instead, but this sends document chunks to OpenAI's API. See [Advanced Configuration](#️-advanced-configuration) for details.
 
 ---
 
+## 📖 Usage Modes
+
+PocketRAG works in two modes:
+
+### 1. 🌐 REST API Mode (Universal)
+Use PocketRAG with **any** application or AI assistant:
+- Custom applications and scripts
+- OpenAI GPT with function calling
+- LangChain, LlamaIndex integrations
+- Any LLM with HTTP client
+- Automation workflows
+
+**Endpoints:**
+- `POST /learn` - Upload PDFs
+- `GET /ask?q=query&mode=hybrid` - Search and get answers
+- `GET /stats` - Get database statistics
+
+### 2. 🔌 MCP Mode (Claude Desktop)
+Native integration with Claude Desktop via Model Context Protocol:
+- Claude can search your docs automatically
+- No manual API calls needed
+- Seamless conversation flow
+
+**Choose the mode that fits your use case!**
+
+---
+
 ## 🚀 Quick Start (5 Minutes)
 
-### 1. Build & Start (Ingestion Mode)
+### 1. Build & Start
 
-We start the container in **API mode** to "teach" it your documents.
+Start the server to index your documents:
 
 ````bash
 # 1. Clone & Build
@@ -284,6 +318,7 @@ Try asking:
 ### Privacy vs. Quality Trade-offs
 
 **Default (Recommended): 100% Local with Ollama**
+
 - ✅ All processing happens on your machine
 - ✅ Documents never leave your infrastructure
 - ✅ No API costs
@@ -291,11 +326,10 @@ Try asking:
 - ⚠️ Slightly lower embedding quality than OpenAI
 
 **Optional: OpenAI for Better Embeddings**
+
 - ✅ Higher quality vector embeddings
 - ✅ Better semantic search accuracy
 - ⚠️ **Sends document chunks to OpenAI API**
-- ⚠️ API costs (~$0.0001 per 1K tokens)
-- ⚠️ Requires internet connection
 
 ### Environment Variables
 
@@ -361,28 +395,37 @@ PocketRAG exposes these tools to Claude:
 
 ---
 
-## 📦 Tech Stack
+## ⚡ Performance
 
-**Local-First Architecture:**
-- **Runtime:** [Bun](https://bun.sh) — Fast TypeScript runtime
-- **Framework:** [Elysia](https://elysiajs.com) — Lightweight HTTP server
-- **Database:** SQLite + [sqlite-vec](https://github.com/asg017/sqlite-vec) + FTS5 — Portable, single-file database with vector search
-- **Protocol:** [Model Context Protocol (MCP)](https://modelcontextprotocol.io) — Anthropic's standard for tool integration
-- **Embeddings:** [Ollama](https://ollama.ai) (local) or OpenAI (cloud)
-- **LLM (Optional):** Ollama (local) / OpenAI / Anthropic (for answer generation via REST API)
+**Lightweight & Fast** — Built with Bun for maximum performance.
 
-**Key Design Choices:**
-- ✅ SQLite for portability (backup = copy one file)
-- ✅ Docker for consistent deployment
-- ✅ Ollama for offline operation
-- ✅ MCP for native Claude Desktop integration
-- ✅ Hybrid search (RRF) for better retrieval than vector-only
+| Metric            | Measured Value | Notes                           |
+| ----------------- | -------------- | ------------------------------- |
+| **Docker Image**  | 342 MB         | Code + Bun runtime + sqlite-vec |
+| **RAM Usage**     | ~55 MB         | Idle, after cold start          |
+| **Cold Start**    | < 500ms        | Server ready to accept requests |
+| **Hybrid Search** | ~100ms         | Vector + FTS5 combined          |
+
+**Embedding Performance (Batch Processing):**
+| Chunks | Old (1-at-a-time) | New (Batch) | Speedup |
+|--------|-------------------|-------------|---------|
+| 1,000 | ~500s | ~30s | **16x** |
+| 10,000 | ~5,000s | ~300s | **16x** |
+
+> 💡 Uses Ollama's `/api/embed` endpoint with batch size of 32 and 4 concurrent requests.
+
+**LLM Response (with `keep_alive: -1`):**
+| Call | Time | Notes |
+|------|------|-------|
+| First (cold) | ~10-15s | Model loading into RAM |
+| Subsequent (warm) | ~2-5s | Model already loaded |
 
 ---
 
 ## 🤝 Contributing
 
 PocketRAG is open source! Contributions welcome:
+
 - 🐛 Bug reports and fixes
 - ✨ Feature requests and implementations
 - 📖 Documentation improvements

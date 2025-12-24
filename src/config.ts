@@ -68,7 +68,7 @@ const getVectorDimension = (provider: EmbedProvider, model: string): number => {
 const chatProvider = getEnv("CHAT_PROVIDER", "ollama") as ChatProvider;
 const embedProvider = getEnv("EMBED_PROVIDER", "ollama") as EmbedProvider;
 
-const ollamaEmbedModel = getEnv("OLLAMA_EMBED_MODEL", "nomic-embed-text");
+const ollamaEmbedModel = getEnv("OLLAMA_EMBED_MODEL", "mxbai-embed-large");
 const openaiEmbedModel = getEnv("OPENAI_EMBED_MODEL", "text-embedding-3-small");
 const activeEmbedModel =
   embedProvider === "openai" ? openaiEmbedModel : ollamaEmbedModel;
@@ -108,11 +108,11 @@ export const ENV: Config = {
 export const VECTOR_DIM = ENV.vectorDim;
 
 console.log(`
-┌─────────────────────────────────────────┐
+┌──────────────────────────────────────────────────┐
 │ 🚀 PocketRAG Initialized │
-├─────────────────────────────────────────┤
-│ 🧠 Chat Provider: ${ENV.chatProvider.toUpperCase().padEnd(17)}│
-│ 💾 Embed Provider: ${ENV.embedProvider.toUpperCase().padEnd(17)}│
-│ 📐 Vector Dim: ${String(ENV.vectorDim).padEnd(17)}│
-└─────────────────────────────────────────┘
+├──────────────────────────────────────────────────┤
+│ 🧠 Chat Model: ${ENV.ollama.chatModel.padEnd(28)}│
+│ 💾 Embed Model: ${ENV.ollama.embedModel.padEnd(28)}│
+│ 📐 Vector Dim: ${String(ENV.vectorDim).padEnd(28)}│
+└──────────────────────────────────────────────────┘
 `);

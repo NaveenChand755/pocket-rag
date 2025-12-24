@@ -1,48 +1,53 @@
 /**
- * Search service for hybrid, vector, and FTS queries
- * Implements Reciprocal Rank Fusion (RRF) for hybrid search
+ * Search service for hybrid and vector queries
+ * Uses optimized FTS pre-filtering with vector search
  */
 
 import { db } from "../../db/schema";
 import { AI } from "../ai";
 import { sanitizeFTSQuery } from "../../utils/query-processor";
-import type { SearchResult, FTSResult, SearchMode } from "../../types";
+import { hybridSearch as ftsHybridSearch } from "../../db/fts-index";
+import { knnSearch } from "../../db/vector-index"
+import type { SearchResult, SearchMode } from "../../types";
 
-// Prepared statements for performance
-const vectorSearchQuery = db.prepare(`
-SELECT
-docs.content,
-docs.filename,
-vec_distance_cosine(vec_docs.embedding, ?) as distance
-FROM vec_docs
-JOIN docs ON vec_docs.doc_id = docs.rowid
-WHERE vec_docs.embedding MATCH ? AND k = 30
-ORDER BY distance
+// Prepared statement for chunk retrieval
+const getChunkById = db.prepare(`
+SELECT content, source as filename FROM chunks WHERE id = ?
 `);
 
-const ftsSearchQuery = db.prepare(`
-SELECT
-content,
-filename,
-bm25(docs) as rank
-FROM docs
-WHERE docs MATCH ?
+// Prepared statement for FTS-only search on chunks
+const ftsChunksQuery = db.prepare(`
+SELECT chunk_id, bm25(chunks_fts) as rank
+FROM chunks_fts
+WHERE chunks_fts MATCH ?
 ORDER BY rank
 LIMIT 30
 `);
 
 /**
- * Perform vector search using embeddings
+ * Perform vector search using vec_index table
  */
 export async function vectorSearch(query: string): Promise<SearchResult[]> {
   const qVector = await AI.embed(query);
-  const queryBuffer = new Uint8Array(new Float32Array(qVector).buffer);
+  const results = knnSearch(db, qVector, 30);
 
-  const vectorRaw = vectorSearchQuery.all(queryBuffer, queryBuffer) as SearchResult[];
+  const searchResults: SearchResult[] = [];
+  for (const result of results) {
+    const chunk = getChunkById.get(result.chunkId) as
+      | { content: string; filename: string }
+      | undefined;
+    if (chunk) {
+      searchResults.push({
+        content: chunk.content,
+        filename: chunk.filename || "unknown",
+        distance: result.distance,
+      });
+    }
+  }
 
   // Apply reranking for relevance filtering
   const reranked = AI.rerank(
-    vectorRaw.map((doc) => ({
+    searchResults.map((doc) => ({
       content: doc.content,
       score: 1 - doc.distance,
     })),
@@ -50,127 +55,91 @@ export async function vectorSearch(query: string): Promise<SearchResult[]> {
   );
 
   return reranked.slice(0, 10).map((r) => {
-    const orig = vectorRaw.find((v) => v.content === r.content);
+    const orig = searchResults.find((v) => v.content === r.content);
     return orig ?? { content: r.content, filename: "unknown", distance: 0.5 };
   });
 }
 
 /**
- * Perform full-text search using FTS5
+ * Perform full-text search using FTS5 on chunks_fts table
  */
 export function ftsSearch(query: string): SearchResult[] {
   const safeQuery = sanitizeFTSQuery(query);
-  const ftsResults = ftsSearchQuery.all(safeQuery) as FTSResult[];
+  const ftsResults = ftsChunksQuery.all(safeQuery) as Array<{
+    chunk_id: number;
+    rank: number;
+  }>;
 
-  return ftsResults.map((r) => ({
-    content: r.content,
-    filename: r.filename,
-    distance: 1 - Math.min(1, Math.abs(r.rank) / 10),
-  }));
+  const searchResults: SearchResult[] = [];
+  for (const result of ftsResults) {
+    const chunk = getChunkById.get(result.chunk_id) as
+      | { content: string; filename: string }
+      | undefined;
+    if (chunk) {
+      searchResults.push({
+        content: chunk.content,
+        filename: chunk.filename || "unknown",
+        distance: 1 - Math.min(1, Math.abs(result.rank) / 10),
+      });
+    }
+  }
+
+  return searchResults;
 }
 
 /**
- * Perform hybrid search using Reciprocal Rank Fusion (RRF)
- * Combines vector and FTS results with intelligent scoring
+ * Perform hybrid search using FTS pre-filtering + vector search
+ * This is more efficient than separate FTS and vector searches
  */
 export async function hybridSearch(query: string): Promise<SearchResult[]> {
   const qVector = await AI.embed(query);
-  const queryBuffer = new Uint8Array(new Float32Array(qVector).buffer);
   const safeQuery = sanitizeFTSQuery(query);
 
-  let vectorRaw: SearchResult[] = [];
-  let ftsRaw: FTSResult[] = [];
+  // Use optimized hybrid search with FTS pre-filtering
+  const results = ftsHybridSearch(db, safeQuery, qVector, 30);
 
-  try {
-    [vectorRaw, ftsRaw] = await Promise.all([
-      Promise.resolve(vectorSearchQuery.all(queryBuffer, queryBuffer) as SearchResult[]),
-      Promise.resolve(ftsSearchQuery.all(safeQuery) as FTSResult[]),
-    ]);
-  } catch (e) {
-    // If FTS query fails, fall back to vector only
-    console.error("[Search] FTS query failed, using vector only:", e);
-    vectorRaw = vectorSearchQuery.all(queryBuffer, queryBuffer) as SearchResult[];
+  // If no FTS matches, fall back to pure vector search
+  if (results.length === 0) {
+    console.log("[Search] No FTS matches, falling back to vector search");
+    return vectorSearch(query);
   }
 
-  const k = 60; // Standard RRF constant
-  const scores = new Map<
-    string,
-    { score: number; doc: SearchResult; inBoth: boolean }
-  >();
-
-  // Process Vector Results - use actual distance for better ranking
-  vectorRaw.forEach((doc, rank) => {
-    if (!doc.content) return; // Skip null content
-
-    // RRF score + bonus based on actual vector distance (lower = better)
-    const rrf = 1 / (k + rank + 1);
-    const distanceBonus = (1 - doc.distance) * 0.1; // 0-0.1 bonus
-    const score = rrf + distanceBonus;
-
-    scores.set(doc.content, { score, doc, inBoth: false });
-  });
-
-  // Process FTS Results
-  ftsRaw.forEach((doc, rank) => {
-    if (!doc.content) return; // Skip null content
-
-    const rrf = 1 / (k + rank + 1);
-    const existing = scores.get(doc.content);
-
-    if (!existing) {
-      // FTS-only matches
-      scores.set(doc.content, {
-        score: rrf,
-        doc: {
-          content: doc.content,
-          filename: doc.filename,
-          distance: 0.5,
-        },
-        inBoth: false,
+  const searchResults: SearchResult[] = [];
+  for (const result of results) {
+    const chunk = getChunkById.get(result.chunkId) as
+      | { content: string; filename: string }
+      | undefined;
+    if (chunk) {
+      searchResults.push({
+        content: chunk.content,
+        filename: chunk.filename || "unknown",
+        distance: result.distance,
       });
-    } else {
-      // Document in BOTH searches gets 2x boost!
-      existing.score = existing.score * 2 + rrf;
-      existing.inBoth = true;
     }
-  });
+  }
 
-  // Sort by combined RRF score (higher = better)
-  // Prioritize documents found in both searches
-  const sortedResults = Array.from(scores.values())
-    .sort((a, b) => {
-      // Prioritize docs in both results
-      if (a.inBoth && !b.inBoth) return -1;
-      if (!a.inBoth && b.inBoth) return 1;
-      return b.score - a.score;
-    })
-    .slice(0, 15); // Get more for re-ranking
-
-  // Re-rank based on query relevance
+  // Apply reranking for relevance filtering
   const reranked = AI.rerank(
-    sortedResults.map((item) => ({
-      content: item.doc.content,
-      score: item.score,
+    searchResults.map((doc) => ({
+      content: doc.content,
+      score: 1 - doc.distance,
     })),
     query
   );
 
-  return reranked.slice(0, 8).map((r) => {
-    const orig = sortedResults.find((s) => s.doc.content === r.content);
-    return (
-      orig?.doc ?? {
-        content: r.content,
-        filename: "unknown",
-        distance: 0.5,
-      }
-    );
+  return reranked.slice(0, 10).map((r) => {
+    const orig = searchResults.find((v) => v.content === r.content);
+    return orig ?? { content: r.content, filename: "unknown", distance: 0.5 };
   });
 }
 
 /**
  * Main search function - routes to appropriate search method
  */
-export async function search(query: string, mode: SearchMode = "hybrid"): Promise<SearchResult[]> {
+export async function search(
+  query: string,
+  mode: SearchMode = "hybrid"
+): Promise<SearchResult[]> {
   switch (mode) {
     case "vector":
       return vectorSearch(query);

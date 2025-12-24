@@ -11,27 +11,36 @@ const initDatabase = (): Database => {
   db.run("PRAGMA synchronous = NORMAL");
   db.run("PRAGMA foreign_keys = ON");
 
-  // 2. Load Extension
+  // Load sqlite-vec extension
   // CRITICAL NOTE: This usually fails on macOS locally.
   // You MUST run this in Docker (Linux) for it to work reliably.
   sqliteVec.load(db);
 
-  // 3. Syntax Fix: Use db.run() for Table Creation
-  // FTS5 table for full-text search
+  // Chunks table for semantic chunking
   db.run(`
-CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(
-filename,
-content,
-created_at UNINDEXED,
-tokenize = 'porter unicode61'
-);
+CREATE TABLE IF NOT EXISTS chunks (
+id INTEGER PRIMARY KEY,
+content TEXT NOT NULL,
+source TEXT,
+created_at INTEGER DEFAULT (strftime('%s', 'now'))
+)
 `);
 
+  // Vec0 index for fast KNN search on chunks
   db.run(`
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_docs USING vec0(
-doc_id INTEGER,
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_index USING vec0(
+chunk_id INTEGER PRIMARY KEY,
 embedding float[${VECTOR_DIM}]
-);
+)
+`);
+
+  // FTS5 index for pre-filtering on chunks
+  db.run(`
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+content,
+chunk_id UNINDEXED,
+tokenize = 'porter unicode61'
+)
 `);
 
   return db;

@@ -19,15 +19,17 @@ export function createMCPServer(): McpServer {
     "search_knowledge_base",
     {
       description: "Search local PDF documentation for context.",
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe("The search keywords or question"),
         mode: z
           .enum(["vector", "fts", "hybrid"])
           .default("hybrid")
           .describe("Search mode"),
-      },
+      }),
     },
-    async ({ query, mode }) => searchKnowledgeBase(query, mode)
+    async ({ query, mode }) => {
+      return await searchKnowledgeBase(query, mode);
+    }
   );
 
   // Tool 2: Get knowledge base stats
@@ -35,9 +37,11 @@ export function createMCPServer(): McpServer {
     "get_knowledge_base_stats",
     {
       description: "Get statistics about the local knowledge base.",
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async () => getKnowledgeBaseStats()
+    async () => {
+      return await getKnowledgeBaseStats();
+    }
   );
 
   // Tool 3: List documents
@@ -45,9 +49,11 @@ export function createMCPServer(): McpServer {
     "list_documents",
     {
       description: "List all files currently indexed.",
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
-    async () => listDocuments()
+    async () => {
+      return await listDocuments();
+    }
   );
 
   return server;

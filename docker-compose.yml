@@ -12,6 +12,7 @@ services:
     environment:
       - DB_PATH=/data/pocket-rag.sqlite
       - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_EMBED_MODEL=mxbai-embed-large
 
 volumes:
   pocket-rag-data:
