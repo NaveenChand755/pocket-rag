@@ -9,8 +9,8 @@ import type { StatsResponse } from "../types";
 
 const statsQuery = db.prepare(`
 SELECT
-(SELECT COUNT(DISTINCT filename) FROM docs) as doc_count,
-(SELECT COUNT(*) FROM docs) as chunk_count
+(SELECT COUNT(DISTINCT source) FROM chunks) as doc_count,
+(SELECT COUNT(*) FROM chunks) as chunk_count
 `);
 
 export const healthRoutes = new Elysia()

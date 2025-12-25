@@ -4,6 +4,7 @@
  */
 
 import { Elysia } from "elysia";
+import { cors } from "@elysiajs/cors";
 import { healthRoutes } from "./routes/health";
 import { learnRoutes } from "./routes/learn";
 import { askRoutes } from "./routes/ask";
@@ -11,6 +12,7 @@ import { askRoutes } from "./routes/ask";
 const PORT = process.env.PORT || 3000;
 
 const app = new Elysia()
+  .use(cors())
   .use(healthRoutes)
   .use(learnRoutes)
   .use(askRoutes)

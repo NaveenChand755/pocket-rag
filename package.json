@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@elysiajs/cors": "^1.4.0",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "elysia": "^1.4.19",
     "openai": "^6.15.0",
